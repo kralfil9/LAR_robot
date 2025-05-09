@@ -1,5 +1,10 @@
 # LAR_robot
 
+**PRIORITY**
+- get distance
+- rotate
+- detection half ball
+
 **IDEA**
 
 1. Create map
@@ -10,13 +15,13 @@
 # Classes
 
 - **RobotControler**
-    - safe robot movements
+    - safe robot movements - shutdown [x]
     - move by distance?
     - rotabe by angle?
 
 - **ImageProcessor**
     - Classify rgb image
-    - Add depth to image?
+    - Add depth to image
     
 
 # Threads
@@ -26,13 +31,14 @@
     - move robot
 
 - **Image**
-|_ process images
-|_ classify objects
+    - process images
+    - classify objects
 
 - **Exit**
     - bumper
-    - depth - too close
 
 - **GUI?**
     - console prints
     - show windows
+- **DEPTH?**
+    - get_distance

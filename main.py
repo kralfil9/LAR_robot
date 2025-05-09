@@ -2,16 +2,18 @@ from __future__ import print_function
 from robolab_turtlebot import Turtlebot, get_time
 import cv2
 import threading
-import math
 import numpy as np
 import ctypes
 from queue import Queue
 
 ctypes.CDLL('libX11.so.6').XInitThreads()
 
+### CLASS DEFINITION ###
+
 class SharedData:
-    def __inti__(self):
-        pass
+    def __inti__(self, rgb_image=None, depth_image=None):
+        self.rgb_image = rgb_image
+        self.depth_image = depth_image
 
 class TurtlebotController:
     def __init__(self, turtle, exit:threading.Event):
@@ -24,36 +26,89 @@ class TurtlebotController:
     def bumper_cb(self, msg):
         if msg.state == 1:
             self.stop()
-            self.exit.set()
         
     def move(self,linear=0,angular=0):
         with self.lock:
-            if self.stopped:
+            if self.stopped or self.turtlebot.is_shutting_down():
                 return
             self.turtlebot.cmd_velocity(linear, angular)
     
+    def rotate(self, angle, speed):
+        self.turtlebot.reset_odometry()
+        while self.turtlebot.get_odometry()[2] < angle*np.pi/180:
+            print("Rotating: ", self.turtlebot.get_odometry()[2])
+            self.move(0, np.sign(angle)*speed)
+
     def stop(self):
+        self.stopped = True
         with self.lock:
-            self.stopped = True
-            self.turtlebot.cmd_velocity(0, 0)
+            self.move(0, 0)
+        self.exit.set()
+        # with self.lock:
+        #     self.stopped = True
+        #     self.exit.set()
+        #     if not self.turtlebot.is_shutting_down():
+        #         self.turtlebot.cmd_velocity(0, 0)
 
 class ImageProcessor:
     def __init__(self, turtle):
         self.turtlebot = turtle
     
-    def get_image(self): # TODO: Type hint
+    def get_image(self):
         return self.turtlebot.get_rgb_image()
+    
+    def get_depth(self):
+        return self.turtlebot.get_depth_image()
 
-def exit_thread(exit:threading.Event, controler: TurtlebotController):
-    start = get_time()
+### THREAD FUNCTIONS ###
+
+def image_thread(image_queue:Queue, gui_queue:Queue, exit:threading.Event, processor:ImageProcessor):
+    now = 0
+    ticks = 0
+    before = get_time()
 
     while not exit.is_set():
-        if get_time() - start > 20:
-            exit.set()
-            controler.move(0, 0)
+        now = get_time()
+        image = processor.get_image()
+        depth = processor.get_depth()
+        
+        if image is not None and depth is not None:
+            image_queue.put(image)
+            gui_queue.put(image)
+        
+        if (now - before) > 1:
+            print("Image ticks: ", ticks)
+            ticks = 0
+            before = now
+        ticks += 1
 
+def main_thread(image_queue:Queue, controler:TurtlebotController):
+    now = 0
+    ticks = 0
+    before = get_time()
 
-def gui_thread(gui_queue: Queue, exit:threading.Event):
+    while not controler.exit.is_set():
+        now = get_time()
+        
+        controler.rotate(45, 0.5)
+        print(" -- Rotated 45 degrees")
+        with controler.lock:
+            controler.exit.set()
+
+        if now - before > 1:
+            print("Main ticks: ", ticks)
+            ticks = 0
+            before = now
+        ticks += 1
+
+def exit_thread(controler:TurtlebotController):
+    start = get_time()
+
+    while not controler.exit.is_set():
+        if get_time() - start > 20 or controler.turtlebot.is_shutting_down():
+            controler.stop()
+
+def gui_thread(gui_queue:Queue, exit:threading.Event):
     now = 0
     ticks = 0
     before = get_time()
@@ -67,56 +122,15 @@ def gui_thread(gui_queue: Queue, exit:threading.Event):
             cv2.imshow("Image", data)
             cv2.waitKey(1)
         if now - before > 1:
-            print("GUI ticks: ", ticks)
+            # print("GUI ticks: ", ticks)
             ticks = 0
             before = now
         ticks += 1
-
-def image_thread(image_queue: Queue, gui_queue: Queue ,exit:threading.Event, processor: ImageProcessor):
-    now = 0
-    ticks = 0
-    before = get_time()
-
-    while not exit.is_set():
-        now = get_time()
-        image = processor.get_image()
-        if image is not None:
-            image_queue.put(image)
-            gui_queue.put(image)
-        if (now - before) > 1:
-            print("Image ticks: ", ticks)
-            ticks = 0
-            before = now
-        ticks += 1
-
-def main_thread(image_queue: Queue, exit: threading.Event, controler: TurtlebotController):
-    now = 0
-    ticks = 0
-    before = get_time()
-
-    angular = 0.5
-    t = get_time()
-
-    while not exit.is_set():
-        now = get_time()
-
-        if now - t > 5:
-            while get_time() - now < 1:
-                controler.move(angular, angular)
-            angular = -angular
-            t = now
-        
-        controler.move(0, angular)
-        
-        if now - before > 1:
-            print("Main ticks: ", ticks)
-            ticks = 0
-            before = now
-        ticks += 1
-
 
 def main():
-    turtle = Turtlebot(rgb=True, pc=True)
+    turtle = Turtlebot(depth=True, rgb=True)
+    turtle.wait_for_rgb_camera()
+
     exit = threading.Event()
     controler = TurtlebotController(turtle, exit)
     processor = ImageProcessor(turtle)
@@ -124,10 +138,10 @@ def main():
     gui_queue = Queue()
 
     threads = [
-        threading.Thread(target=exit_thread, args=(exit,controler,)),
-        threading.Thread(target=gui_thread, args=(gui_queue,exit,)),
-        threading.Thread(target=image_thread, args=(image_queue, gui_queue,exit,processor,)),
-        threading.Thread(target=main_thread, args=(image_queue,exit,controler,))
+        threading.Thread(target=exit_thread, args=(controler,)),
+        threading.Thread(target=gui_thread, args=(gui_queue, exit,)),
+        threading.Thread(target=image_thread, args=(image_queue, gui_queue, exit, processor)),
+        threading.Thread(target=main_thread, args=(image_queue,controler,))
     ]
 
     for thread in threads:

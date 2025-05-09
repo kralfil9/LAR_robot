@@ -1,7 +1,7 @@
 from __future__ import print_function
 import cv2
 import numpy as np
-from robolab_turtlebot import Turtlebot
+from robolab_turtlebot import Turtlebot # type: ignore
 
 def main():
     turtle = Turtlebot(rgb=True,pc=True)

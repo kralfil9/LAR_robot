@@ -1,5 +1,5 @@
 from __future__ import print_function
-from robolab_turtlebot import Turtlebot, get_time
+from robolab_turtlebot import Turtlebot, get_time # type: ignore
 import cv2
 import threading
 import numpy as np

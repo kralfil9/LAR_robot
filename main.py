@@ -1,5 +1,5 @@
 from __future__ import print_function
-from robolab_turtlebot import Turtlebot, Rate, get_time
+from robolab_turtlebot import Turtlebot, get_time
 import cv2
 import threading
 import math
@@ -14,34 +14,41 @@ class SharedData:
         pass
 
 class TurtlebotController:
-    def __init__(self):
-        self.turtlebot = Turtlebot(pc=False, rgb=False)
+    def __init__(self, turtle, exit:threading.Event):
+        self.turtlebot = turtle
         self.lock = threading.Lock()
         self.stopped = False
-    
+        self.exit = exit
+        self.turtlebot.register_bumper_event_cb(self.bumper_cb)
+
+    def bumper_cb(self, msg):
+        if msg.state == 1:
+            self.stop()
+            self.exit.set()
+        
     def move(self,linear=0,angular=0):
         with self.lock:
             if self.stopped:
                 return
-            self.turtlebot.move(linear, angular)
+            self.turtlebot.cmd_velocity(linear, angular)
     
     def stop(self):
         with self.lock:
             self.stopped = True
-            self.turtlebot.move(0, 0)
+            self.turtlebot.cmd_velocity(0, 0)
 
 class ImageProcessor:
-    def __init__(self):
-        self.turtlebot = self.turtlebot = Turtlebot(pc=True, rgb=True)
+    def __init__(self, turtle):
+        self.turtlebot = turtle
     
     def get_image(self): # TODO: Type hint
-        return self.turtlebot.get_image()
+        return self.turtlebot.get_rgb_image()
 
-def exit_thread(exit:threading.Event):
+def exit_thread(exit:threading.Event, controler: TurtlebotController):
     start = get_time()
-    controler  = TurtlebotController()
+
     while not exit.is_set():
-        if get_time() - start > 10:
+        if get_time() - start > 20:
             exit.set()
             controler.move(0, 0)
 
@@ -65,43 +72,39 @@ def gui_thread(gui_queue: Queue, exit:threading.Event):
             before = now
         ticks += 1
 
-def image_thread(image_queue: Queue, exit:threading.Event):
-    ImageProcessor = ImageProcessor()
-
+def image_thread(image_queue: Queue, gui_queue: Queue ,exit:threading.Event, processor: ImageProcessor):
     now = 0
     ticks = 0
     before = get_time()
 
     while not exit.is_set():
         now = get_time()
-        image = ImageProcessor.get_image()
+        image = processor.get_image()
         if image is not None:
             image_queue.put(image)
+            gui_queue.put(image)
         if (now - before) > 1:
             print("Image ticks: ", ticks)
             ticks = 0
             before = now
         ticks += 1
 
-def main_thread(image_queue: Queue, gui_queue: Queue, exit: threading.Event):
+def main_thread(image_queue: Queue, exit: threading.Event, controler: TurtlebotController):
     now = 0
     ticks = 0
     before = get_time()
 
-    controler = TurtlebotController()
-    angular = 0.2
+    angular = 0.5
     t = get_time()
 
     while not exit.is_set():
         now = get_time()
-        
-        if not image_queue.empty():
-            data = image_queue.get()
-            gui_queue.put(data)
-        
-        if t - get_time() > 5:
+
+        if now - t > 5:
+            while get_time() - now < 1:
+                controler.move(angular, angular)
             angular = -angular
-            t = get_time()
+            t = now
         
         controler.move(0, angular)
         
@@ -113,15 +116,18 @@ def main_thread(image_queue: Queue, gui_queue: Queue, exit: threading.Event):
 
 
 def main():
+    turtle = Turtlebot(rgb=True, pc=True)
+    exit = threading.Event()
+    controler = TurtlebotController(turtle, exit)
+    processor = ImageProcessor(turtle)
     image_queue = Queue()
     gui_queue = Queue()
-    exit = threading.Event()
 
     threads = [
-        threading.Thread(target=exit_thread, args=(exit,)),
+        threading.Thread(target=exit_thread, args=(exit,controler,)),
         threading.Thread(target=gui_thread, args=(gui_queue,exit,)),
-        threading.Thread(target=image_thread, args=(image_queue,exit,)),
-        threading.Thread(target=main_thread, args=(image_queue, gui_queue,exit,))
+        threading.Thread(target=image_thread, args=(image_queue, gui_queue,exit,processor,)),
+        threading.Thread(target=main_thread, args=(image_queue,exit,controler,))
     ]
 
     for thread in threads:

@@ -164,32 +164,27 @@ class ImageProcessor:
     @staticmethod
     def find_ball(turtle, contours, img, color):
         ball = None
- 
+
         for con in contours:
             hull = cv2.convexHull(con)
             area = cv2.contourArea(con)
- 
-            if area < 450 or area > 55000:
+
+            if area < 1400 or area > 55000:
                 continue
- 
+
             (x1, y1), (width, height), angle = cv2.minAreaRect(hull)
             (x, y), radius = cv2.minEnclosingCircle(hull)
- 
-            f1 = area / (width * height)
-            f2 = area / (math.pi * radius**2)
- 
-            # Compute given red objects to detect only correct ball
-            if f2 > 0.3 and ((f1 < f2 and 0.75 < f2 < 1.2)  
-                    or (area > 4500)):   # area > 4000 or width > height * 1.3
-                tmp = Point(int(x), int(y),
-                    ImageProcessor.get_distance(turtle, y, x))
- 
-                if tmp.dist_in_m < 0.3: 
-                    continue
- 
-                img = cv2.circle(img, (int(x), int(y)), int(radius), color, 1)
+
+            f1 = area / (width * height + 1e-5)
+            f2 = area / (math.pi * radius**2 + 1e-5)
+
+            if f2 > 0.3 and ((f1 < f2 and 0.75 < f2 < 1.2) or (area > 4500)):
+                tmp = Point(int(x), int(y), ImageProcessor.get_distance(turtle, y, x))
+
+                img = cv2.circle(img, (int(x), int(y)), int(radius), color, 2)
                 ball = tmp
- 
+                break
+                   
         return ball, img
  
     # Draw convex hull around provided contours for visualization
@@ -262,6 +257,8 @@ class RobotController:
  
         # Constant to hadle situations, when robot do not need to compute ball
         self.ball_ignore = False
+
+        self.state_counter = 0
  
         self.state = "ROTATE"
  
@@ -475,7 +472,6 @@ class RobotController:
  
     # Manage robot behavior according to its current operational state
     def handle_state(self):
- 
         if (self.state == "LOOK" or self.state == "FINDGATE") \
             and len(self.gates) == 2:
             if self.complete_rotation:
@@ -694,6 +690,8 @@ class RobotController:
             self.phi_a = 0
             self.ball_found = False
             self.dist_between_poles = 0.7
+
+            self.state_counter += 1
              
             self.state = "ROTATE"
  
@@ -720,7 +718,11 @@ class RobotController:
             if self.ball is None and ball_for_zalupa == False:
                 if len(self.gates) == 2:
                     self.complete_rotation = False
- 
+                    if self.state_counter >= 2:
+                        time = get_time()
+                        while get_time() - t < 0.5:
+                            self.move(linear = -0.5)
+                    
                 self.state = "LOOK"
                 return
  

@@ -35,8 +35,9 @@ class TurtlebotController:
     
     def rotate(self, angle, speed):
         self.turtlebot.reset_odometry()
-        while self.turtlebot.get_odometry()[2] < angle*np.pi/180:
-            print("Rotating: ", self.turtlebot.get_odometry()[2])
+        t = get_time()
+        while get_time() - t < 10:
+            print("Rotating: ", self.turtlebot.get_odometry()[2], "angle: ", angle*np.pi/180)
             self.move(0, np.sign(angle)*speed)
 
     def stop(self):
@@ -51,8 +52,10 @@ class TurtlebotController:
         #         self.turtlebot.cmd_velocity(0, 0)
 
 class ImageProcessor:
-    def __init__(self, turtle):
-        self.turtlebot = turtle
+    def __init__(self):
+        self.turtlebot = Turtlebot(rgb=True, pc=True)
+        self.turtlebot.wait_for_rgb_image()
+        self.turtlebot.wait_for_depth_image()
     
     def get_image(self):
         return self.turtlebot.get_rgb_image()
@@ -76,7 +79,7 @@ def image_thread(image_queue:Queue, gui_queue:Queue, exit:threading.Event, proce
             image_queue.put(image)
             gui_queue.put(image)
         
-        if (now - before) > 1:
+        if now - before > 1:
             print("Image ticks: ", ticks)
             ticks = 0
             before = now
@@ -87,13 +90,14 @@ def main_thread(image_queue:Queue, controler:TurtlebotController):
     ticks = 0
     before = get_time()
 
+
+
     while not controler.exit.is_set():
         now = get_time()
         
         controler.rotate(45, 0.5)
-        print(" -- Rotated 45 degrees")
-        with controler.lock:
-            controler.exit.set()
+
+        
 
         if now - before > 1:
             print("Main ticks: ", ticks)
@@ -128,12 +132,11 @@ def gui_thread(gui_queue:Queue, exit:threading.Event):
         ticks += 1
 
 def main():
-    turtle = Turtlebot(depth=True, rgb=True)
-    turtle.wait_for_rgb_camera()
+    turtle = Turtlebot()
 
     exit = threading.Event()
     controler = TurtlebotController(turtle, exit)
-    processor = ImageProcessor(turtle)
+    processor = ImageProcessor()
     image_queue = Queue()
     gui_queue = Queue()
 

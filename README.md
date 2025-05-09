@@ -12,6 +12,10 @@
 3. Calibration
 4. Decesion tree
 
+# ERRORS
+- odometry loop
+- image get (prob. bad robot)
+
 # Classes
 
 - **RobotControler**

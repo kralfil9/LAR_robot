@@ -41,15 +41,11 @@ class TurtlebotController:
             self.move(0, np.sign(angle)*speed)
 
     def stop(self):
-        self.stopped = True
         with self.lock:
-            self.move(0, 0)
-        self.exit.set()
-        # with self.lock:
-        #     self.stopped = True
-        #     self.exit.set()
-        #     if not self.turtlebot.is_shutting_down():
-        #         self.turtlebot.cmd_velocity(0, 0)
+            self.stopped = True
+            self.exit.set()
+            if not self.turtlebot.is_shutting_down():
+                self.turtlebot.cmd_velocity(0, 0)
 
 class ImageProcessor:
     def __init__(self):

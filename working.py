@@ -1,6 +1,6 @@
 
 from __future__ import print_function
-from robolab_turtlebot import Turtlebot, Rate, get_time
+from robolab_turtlebot import Turtlebot, Rate, get_time # type: ignore
 import cv2
 import threading
 import math
@@ -227,7 +227,6 @@ class ImageProcessor:
                 if x + i < 0 or x + i > 639 or y + j < 0 or y + j > 479 \
                     or pc[y + j, x + i] < 0.1:
                     continue
- 
                 else:
                     if ans == -1 or pc[y + j, x + i] < ans:
                         ans = pc[y +j, x + i]
@@ -280,6 +279,7 @@ class RobotController:
         self.gate_center = None
          
         self.mutex = threading.Lock()
+        self.stopped = False
  
     # Check if the robot should terminate operations
     def shut_down(self):
@@ -297,8 +297,14 @@ class RobotController:
  
     # Send linear and angular velocity commands to robot
     def move(self, angular = 0, linear = 0):
-        if not self.turtle.is_shutting_down():
+        if not self.turtle.is_shutting_down() and not self.stopped:
             self.turtle.cmd_velocity(angular = angular, linear = linear)
+    
+    def stop(self):
+        self.stopped = True
+        if not self.turtle.is_shutting_down():
+            self.turtle.cmd_velocity(angular = 0, linear = 0)
+
  
     # Continuously process camera images for object detection and labeling,
     # handled with mutex for safe and correct threading
@@ -839,6 +845,7 @@ class RobotController:
  
             if self.bumper_triggered:
                 print("\nEND: Bumper exit")
+                self.stop()
                 self.turtle.play_sound(sound_id = 4)
                 break
  

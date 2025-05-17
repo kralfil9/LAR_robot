@@ -55,8 +55,10 @@ class ImageProcessor:
         masks = {
             "yellow": cv2.inRange(
                 hsv,
-                np.array([22, 190, 25], np.uint8),
-                np.array([33, 255, 190], np.uint8),
+                # np.array([22, 190, 25], np.uint8),
+                # np.array([33, 255, 190], np.uint8),
+                np.array([20, 80, 40], np.uint8),
+                np.array([35, 255, 255], np.uint8),
             ),
             "red": cv2.inRange(
                 hsv, np.array([0, 90, 60], np.uint8),
@@ -179,7 +181,7 @@ class ImageProcessor:
             f1 = area / (width * height + 1e-5)
             f2 = area / (math.pi * radius**2 + 1e-5)
 
-            if f2 > 0.30 and ((f1 < f2 and 0.1 < f2 < 1.2) or (area > 5000)): #0.75
+            if f2 > 0.30 and ((f1 < f2 and 0.3 < f2 < 1.2) or (area > 5000)): #0.75
                 tmp = Point(int(x), int(y), ImageProcessor.get_distance(turtle, y, x))
 
                 img = cv2.circle(img, (int(x), int(y)), int(radius), color, 2)
@@ -216,17 +218,16 @@ class ImageProcessor:
         pc = pc[95:400, 110:510]
         pc = cv2.resize(pc, (640, 480), interpolation = cv2.INTER_NEAREST)
 
-        ################################################################# DELETE:
-        #norm = cv2.normalize(pc, None, 0, 255, cv2.NORM_MINMAX)
-        #norm = norm.astype(np.uint8)
-        #colored = cv2.applyColorMap(norm, cv2.COLORMAP_JET)
-        #cv2.imshow("Depth Visualization", colored)
-        ########################################################################
+        ###########################  SHOW DEPTH  ##############################
+        # norm = cv2.normalize(pc, None, 0, 255, cv2.NORM_MINMAX)
+        # norm = norm.astype(np.uint8)
+        # colored = cv2.applyColorMap(norm, cv2.COLORMAP_JET)
+        # cv2.imshow("Depth Visualization", colored)
+        #######################################################################
         
         # Define the area where to look for object
         rect_x = 7
         rect_y = 3
- 
         ans = -1
  
         # Choose the most precise distance to point
@@ -275,6 +276,7 @@ class RobotController:
         self.phi_a = 0
         self.x_fw = 0
         self.side = 0
+        self.look_side = 1
          
         # Define the minimum distance between poles for further calculations
         self.dist_between_poles = 0.7
@@ -310,12 +312,12 @@ class RobotController:
         if not self.turtle.is_shutting_down() and not self.stopped:
             self.turtle.cmd_velocity(angular = angular, linear = linear)
     
+    # Block further robot move commands
     def stop(self):
         self.stopped = True
         if not self.turtle.is_shutting_down():
             self.turtle.cmd_velocity(angular = 0, linear = 0)
 
- 
     # Continuously process camera images for object detection and labeling,
     # handled with mutex for safe and correct threading
     def process_image(self):
@@ -414,7 +416,7 @@ class RobotController:
         res = ImageProcessor.get_hsv_channels(hsv)
  
         # + res["yellow"] + res["green"]
-        self.result = res["blue"] + res["yellow"] # 
+        self.result = res["blue"] + res["yellow"]
         self.result, self.ball, self.gates = ImageProcessor.labeling(
             self.result, res, self
         )
@@ -426,7 +428,7 @@ class RobotController:
     # Move robot forward indefinitely with ball avoidance
     def go_forward_unlimited(self, dist, side):
         self.move()
-        PARAM = dist * 2.05  #2.2
+        PARAM = dist * 2  #2.2 # 2.05
         t = get_time()
  
         while (get_time() - t < max(PARAM, 0.4)) and self.shut_down() and \
@@ -508,7 +510,7 @@ class RobotController:
         if self.state == "LOOK":
             if self.ball:
                 self.ball_found = True
-            self.move(angular = 0.45)
+            self.move(angular = self.look_side * 0.45)
  
         # EXCEPTION: Handles scenarios when gates distances vary significantly
         elif self.state == "EXCEPTION":
@@ -532,12 +534,12 @@ class RobotController:
                 self.turn_deg(50, side_1)
                 self.go_forward_unlimited(1 * 0.85 * a, side_1)
                  
-                self.state = "GOAL_EXC"
+                self.state = "GOAL_EXCEPTION"
                 self.move()
  
-        # GOAL_EXC: Moves robot towards the ball after handling an 
+        # GOAL_EXCEPTION: Moves robot towards the ball after handling an 
         # exception state
-        elif self.state == "GOAL_EXC":
+        elif self.state == "GOAL_EXCEPTION":
             if self.ball:
                 # Center the robot on ball center
                 if CENTER_IMG.x - self.ball.x < -7:
@@ -565,6 +567,7 @@ class RobotController:
         # detected gates
         elif self.state == "FINDGATE":
             angular = 0
+            self.move() 
  
             if len(self.gates) != 2:
                 self.state = "LOOK"
@@ -583,16 +586,17 @@ class RobotController:
                 self.state = "EXCEPTION"
                 return
 
+            # Proceed to the movement state when ready
             if self.ball and len(self.gates) == 2 and not self.ball_found:
-                self.state = "GOAL_ADVANCED"
+                self.state = "MOVE_ADVANCED"
                 return
  
             # Center the robot on gate center
             if CENTER_IMG.x - self.gate_center < -5:
-                angular = -0.2 - abs(CENTER_IMG.x - self.gate_center) * 0.003
+                angular = -0.2 - abs(CENTER_IMG.x - self.gate_center) * 0.0008 # 0.003
  
             elif CENTER_IMG.x - self.gate_center > 5:
-                angular = 0.2 + abs(CENTER_IMG.x - self.gate_center) * 0.003
+                angular = 0.2 + abs(CENTER_IMG.x - self.gate_center) * 0.0008 # 0.003
  
             else:
                 # Move the robot forward if the distance to gate is to big for better 
@@ -629,18 +633,14 @@ class RobotController:
             self.d1, self.d2 = self.gates[1].dist_in_m, self.gates[0].dist_in_m
  
             # Decide on which side of the gate is current robot position.
-            # Multiplication by 0.98 is made for more precise calculation of
-            # depth to the gates, due to depth camera angle
             if self.gates[0].x > self.gates[1].x:
                 if self.d2 > self.d1:
-                    #self.d2 = self.d2 * 0.98
                     self.side = -1
                 else:
                     self.d1, self.d2 = self.d1, self.d2
                     self.side = 1
             else:
                 if self.d2 > self.d1:
-                    #self.d2 = self.d2 * 0.98
                     self.side = 1
                 else:
                     self.d1, self.d2 = self.d1, self.d2
@@ -671,7 +671,7 @@ class RobotController:
             z = ((self.d1 + self.d2) / 2) * np.tan(phi)
  
             # Check, that forward distance is not to large
-            self.x_fw += min(z, 3,5)
+            self.x_fw += min(z, 3)
  
             self.phi_a += phi
             self.count += 1
@@ -688,9 +688,9 @@ class RobotController:
                 # Validate calculated output and decide if robot can make a goal
                 # from it's current positon, otherwise proceed to movement
                 if self.x_fw <= 0.08 and abs(self.d1 - self.d2) < 0.01 \
-                    and self.ball is None:  # 0.08
+                    and self.ball is None:
                     self.clear_goal = True
-                    self.state = "GOAL_DEFAULT"
+                    self.state = "GOAL"
  
                 else:
                     self.state = "MOVE"
@@ -712,15 +712,21 @@ class RobotController:
             self.dist_between_poles = 0.7
 
             self.state_counter += 1
+
+            # Define which side to rotate in state look
+            if self.side < 0:
+                self.look_side = 1
+            else:
+                self.look_side = -1
              
             self.state = "ROTATE"
  
         # ROTATE: Rotates robot to locate ball and gates,
         # determining next step based on their positions
         elif self.state == "ROTATE":
-            ball_for_goal_advanced = False
             self.move()
             self.complete_rotation = True
+            ball_for_goal_advanced = False
             dist_gt = 0
             angular = 0
  
@@ -732,15 +738,18 @@ class RobotController:
             if self.ball is None and len(self.gates) == 2 \
                 and max(self.gates[0].x, self.gates[1].x) < 540:
                 self.turn_deg(12, 1)
+
                 if self.ball:
                     ball_for_goal_advanced = True             
 
+            # Move backwards after two iterations if ball is not found
             if self.ball is None and ball_for_goal_advanced == False:
                 if len(self.gates) == 2 or self.ball_found:
                     self.complete_rotation = False
+
                     if self.state_counter >= 2:
                         time = get_time()
-                        print(self.ball_found, self.gates)
+                    
                         while get_time() - time < 0.5 and self.ball is None and \
                             not self.stopped:
                             self.move(linear = -0.5)
@@ -753,29 +762,19 @@ class RobotController:
                 else:
                     self.state = "LOOK"
                 return
- 
-            #if (len(self.gates) == 2 and (
-            #    ((self.gates[0].x + self.gates[1].x) / 2) - self.ball.x) > 100):
- 
-            #    self.state = "FINDGATE"
-            #    self.complete_rotation = False
-            #    self.ball_ignore = False
-            #    return
-            
- 
-            # Calculate the parameter of how precise should the ball be to the 
-            # gate center to make a goal based on distance from robot
-            if len(self.gates) == 2:
-                PARAM = max(int((4.65 * (dist_gt ** 2))), 5)   #4.8
- 
-             # Center the robot on ball center
-            if CENTER_IMG.x - self.ball.x < -7:
+
+            # Center the robot on ball center
+            if CENTER_IMG.x - self.ball.x < -7 and len(self.gates) == 2:
                 angular = -0.2 - abs(CENTER_IMG.x - self.ball.x) * 0.003
  
-            elif CENTER_IMG.x - self.ball.x > 7:
+            elif CENTER_IMG.x - self.ball.x > 7 and len(self.gates) == 2:
                 angular = 0.2 + abs(CENTER_IMG.x - self.ball.x) * 0.003
  
             else:
+                # Calculate the parameter of how precise should the ball be to the 
+                # gate center to make a goal based on distance from robot
+                if len(self.gates) == 2:
+                    PARAM = max(int((4.65 * (dist_gt ** 2))), 5) #4.8
                 if (
                     len(self.gates) == 2
                     and (
@@ -789,24 +788,34 @@ class RobotController:
                         < PARAM
                     )
                 ):
-                    self.state = "GOAL_DEFAULT"
+                    self.state = "GOAL"
 
                 else:
                     self.complete_rotation = False
 
+                    # Proceed to advanced movement state when ball is inside gates
                     if len(self.gates) == 2 and \
                         (self.gates[0].x - 10 < self.ball.x < self.gates[1].x + 10 or \
-                        self.gates[1].x - 10 < self.ball.x < self.gates[0].x + 10):
-                        self.state = "GOAL_ADVANCED"
+                         self.gates[1].x - 10 < self.ball.x < self.gates[0].x + 10):
+                        self.state = "MOVE_ADVANCED"
                     else:
                         self.state = "FINDGATE"
- 
+       
+            # Define which side to rotate in state look
+            if angular < 0:
+                self.look_side = -1
+            else:
+                self.look_side = 1
+
             self.move(angular = angular)
             return
 
-        elif self.state == "GOAL_ADVANCED":
+        # MOVE_ADVANCED: Move the robot to the best postion for goal, based
+        # on calculation made
+        elif self.state == "MOVE_ADVANCED":
             self.move()
             self.ball_found = False
+
             if len(self.gates) < 2 and (self.ball):
                 self.state = "FINDGATE"
                 self.move()
@@ -818,7 +827,7 @@ class RobotController:
                 return
 
             # Move the robot forward if the distance to gate is to big for better 
-                # further calculations
+            # further calculations
             if self.ball.dist_in_m > 1.5:
                 t4 = get_time()
  
@@ -837,25 +846,33 @@ class RobotController:
                 self.move(angular = angular)
                 return
 
-            param = 0.2
+            # Define distance for robot to move forward
+            distance = 0.2
 
+            # Move the robot to the next positon based on ball and gates 
+            # appearance on rgb camera
             if self.ball.x < int((self.gates[0].x + self.gates[1].x)/2):
                 self.side = 1
                 self.turn_deg(90, self.side)
-                self.go_forward(param, self.side)
+                self.go_forward(distance, self.side)
 
             else:
                 self.side = -1
                 self.turn_deg(90, self.side)
-                self.go_forward(param, self.side)
+                self.go_forward(distance, self.side)
+
+            # Define which side to rotate in state look
+            if self.side < 0:
+                self.look_side = 1
+            else:
+                self.look_side = -1
 
             self.state  = "ROTATE"
             self.move()
-
  
-        # GOAL_DEFAULT: Robot moves forward directly towards the ball and attempts
+        # GOAL: Robot moves forward directly towards the ball and attempts
         # goal action
-        elif self.state == "GOAL_DEFAULT":
+        elif self.state == "GOAL":
             if self.ball is None and self.clear_goal == True:
                 t5 = get_time()
  
@@ -868,18 +885,16 @@ class RobotController:
                 return
  
             if self.ball is not None or len(self.gates) == 2:
-                # Calculate the parameter of how far should the robot go
-                # to make a goal
-                #self.goal_param = self.ball.dist_in_m * 1.12
+                time_to_make_goal = 0.55
                 t = get_time()
 
-                if self.ball or get_time() - t < 0.55:
+                if self.ball or get_time() - t < time_to_make_goal:
                     if self.ball is None:
                         self.move(linear = 1)
                     else:
                         self.move(linear = 0.8, angular = (CENTER_IMG.x - self.ball.x) * 0.01)
 
-                    self.state = "GOAL_DEFAULT"
+                    self.state = "GOAL"
  
             else:
                 self.state = "DEATH"
@@ -919,8 +934,8 @@ class RobotController:
         self.turtle.play_sound(sound_id = 1)
  
         # Wait till the button on the robot is pressed to start the program
-        #while not self.button_pressed:
-        #    pass
+        while not self.button_pressed:
+            pass
          
         image_thread = threading.Thread(target=self.process_image)
         movement_thread = threading.Thread(target=self.process_movement)
@@ -945,9 +960,7 @@ class RobotController:
 def main():
     robot = RobotController()
     robot.run()
- 
- 
+
 if __name__ == "__main__":
     main()
-     
-    
+

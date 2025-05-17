@@ -172,7 +172,7 @@ class ImageProcessor:
             hull = cv2.convexHull(con)
             area = cv2.contourArea(con)
 
-            if area < 2000 or area > 50000: # 1500
+            if area < 2200 or area > 50000: # 1500, 2000
                 continue
 
             (x1, y1), (width, height), angle = cv2.minAreaRect(hull)
@@ -437,10 +437,10 @@ class RobotController:
             # for detection of the ball on robot's route and than avoid it
             self.process_image_notsafe()
  
-            if self.ball and self.ball.dist_in_m < 0.8:
+            if self.ball and self.ball.dist_in_m < 0.8 and abs(CENTER_IMG.x - self.ball.x) < 200:
                 t2 = get_time()
- 
-                while (get_time() - t2 < 2.15) and self.shut_down() and \
+                # 2.15
+                while (get_time() - t2 < 2.5) and self.shut_down() and \
                     not self.stopped:
                     if side == 1:
                         self.move(angular = 0.77, linear = 0.4)
@@ -449,7 +449,7 @@ class RobotController:
  
                     self.ball_ignore = True
  
-                self.move(angular = 0, linear = 0)
+                self.move()
  
             else:
                 if dist <= 0.2:
@@ -593,10 +593,10 @@ class RobotController:
  
             # Center the robot on gate center
             if CENTER_IMG.x - self.gate_center < -5:
-                angular = -0.2 - abs(CENTER_IMG.x - self.gate_center) * 0.0008 # 0.003
- 
+                angular = -0.25 - abs(CENTER_IMG.x - self.gate_center) * 0.0008 # 0.003
+                # angular = -0.2 - abs(CENTER_IMG.x - self.gate_center) * 0.0008 # 0.003
             elif CENTER_IMG.x - self.gate_center > 5:
-                angular = 0.2 + abs(CENTER_IMG.x - self.gate_center) * 0.0008 # 0.003
+                angular = 0.25 + abs(CENTER_IMG.x - self.gate_center) * 0.0008 # 0.003
  
             else:
                 # Move the robot forward if the distance to gate is to big for better 
@@ -750,7 +750,7 @@ class RobotController:
                     if self.state_counter >= 2:
                         time = get_time()
                     
-                        while get_time() - time < 0.5 and self.ball is None and \
+                        while get_time() - time < 0.6 and self.ball is None and \
                             not self.stopped:
                             self.move(linear = -0.5)
                         
@@ -885,13 +885,14 @@ class RobotController:
                 return
  
             if self.ball is not None or len(self.gates) == 2:
-                time_to_make_goal = 0.55
+                time_to_make_goal = 0.55 # 0.65
                 t = get_time()
 
                 if self.ball or get_time() - t < time_to_make_goal:
                     if self.ball is None:
                         self.move(linear = 1)
                     else:
+                        # linear = 0.7
                         self.move(linear = 0.8, angular = (CENTER_IMG.x - self.ball.x) * 0.01)
 
                     self.state = "GOAL"

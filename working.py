@@ -774,7 +774,7 @@ class RobotController:
                 # Calculate the parameter of how precise should the ball be to the 
                 # gate center to make a goal based on distance from robot
                 if len(self.gates) == 2:
-                    PARAM = max(int((4.65 * (dist_gt ** 2))), 5) #4.8
+                    PARAM = max(int((4.5 * (dist_gt ** 2))), 5) #4.8
                 if (
                     len(self.gates) == 2
                     and (
